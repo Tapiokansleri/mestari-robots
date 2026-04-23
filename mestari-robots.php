@@ -1,14 +1,20 @@
 <?php
 /**
  * Plugin Name: Mestari Robots
+ * Plugin URI:  https://github.com/Tapiokansleri/mestari-robots
  * Description: Minimal robots.txt editor. The field lives under Settings > Reading and overrides any other robots.txt output (Yoast, etc.).
  * Version:     1.0.0
  * Author:      Mestari
+ * Update URI:  https://github.com/Tapiokansleri/mestari-robots
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
+
+define( 'MESTARI_ROBOTS_FILE', __FILE__ );
+define( 'MESTARI_ROBOTS_VERSION', '1.0.0' );
+define( 'MESTARI_ROBOTS_REPO', 'Tapiokansleri/mestari-robots' );
 
 class Mestari_Robots {
 
@@ -113,3 +119,174 @@ class Mestari_Robots {
 }
 
 Mestari_Robots::init();
+
+class Mestari_Robots_Updater {
+
+	const CACHE_KEY = 'mestari_robots_gh_release';
+	const CACHE_TTL = 6 * HOUR_IN_SECONDS;
+
+	public static function init() {
+		add_filter( 'pre_set_site_transient_update_plugins', array( __CLASS__, 'inject_update' ) );
+		add_filter( 'plugins_api', array( __CLASS__, 'plugin_information' ), 10, 3 );
+		add_filter( 'upgrader_source_selection', array( __CLASS__, 'fix_source_dir' ), 10, 4 );
+	}
+
+	private static function plugin_basename() {
+		return plugin_basename( MESTARI_ROBOTS_FILE );
+	}
+
+	private static function plugin_slug() {
+		return dirname( self::plugin_basename() );
+	}
+
+	private static function fetch_release( $force = false ) {
+		if ( ! $force ) {
+			$cached = get_site_transient( self::CACHE_KEY );
+			if ( is_array( $cached ) ) {
+				return empty( $cached['error'] ) ? $cached : false;
+			}
+		}
+
+		$response = wp_remote_get(
+			'https://api.github.com/repos/' . MESTARI_ROBOTS_REPO . '/releases/latest',
+			array(
+				'timeout' => 10,
+				'headers' => array(
+					'Accept'     => 'application/vnd.github+json',
+					'User-Agent' => 'mestari-robots-updater',
+				),
+			)
+		);
+
+		if ( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) ) {
+			set_site_transient( self::CACHE_KEY, array( 'error' => true ), HOUR_IN_SECONDS );
+			return false;
+		}
+
+		$data = json_decode( wp_remote_retrieve_body( $response ), true );
+		if ( ! is_array( $data ) || empty( $data['tag_name'] ) ) {
+			set_site_transient( self::CACHE_KEY, array( 'error' => true ), HOUR_IN_SECONDS );
+			return false;
+		}
+
+		$zip = '';
+		if ( ! empty( $data['assets'] ) && is_array( $data['assets'] ) ) {
+			foreach ( $data['assets'] as $asset ) {
+				if ( isset( $asset['browser_download_url'] ) && substr( $asset['browser_download_url'], -4 ) === '.zip' ) {
+					$zip = $asset['browser_download_url'];
+					break;
+				}
+			}
+		}
+		if ( ! $zip ) {
+			$zip = ! empty( $data['zipball_url'] ) ? $data['zipball_url'] : '';
+		}
+
+		$release = array(
+			'version'   => ltrim( $data['tag_name'], 'vV' ),
+			'zip'       => $zip,
+			'changelog' => isset( $data['body'] ) ? (string) $data['body'] : '',
+			'published' => isset( $data['published_at'] ) ? $data['published_at'] : '',
+			'html_url'  => isset( $data['html_url'] ) ? $data['html_url'] : ( 'https://github.com/' . MESTARI_ROBOTS_REPO ),
+		);
+
+		set_site_transient( self::CACHE_KEY, $release, self::CACHE_TTL );
+		return $release;
+	}
+
+	public static function inject_update( $transient ) {
+		if ( empty( $transient ) || ! is_object( $transient ) ) {
+			return $transient;
+		}
+
+		$release = self::fetch_release();
+		if ( ! $release || empty( $release['zip'] ) ) {
+			return $transient;
+		}
+
+		$basename = self::plugin_basename();
+
+		if ( version_compare( $release['version'], MESTARI_ROBOTS_VERSION, '>' ) ) {
+			$transient->response[ $basename ] = (object) array(
+				'id'          => 'mestari-robots/' . $basename,
+				'slug'        => self::plugin_slug(),
+				'plugin'      => $basename,
+				'new_version' => $release['version'],
+				'url'         => $release['html_url'],
+				'package'     => $release['zip'],
+				'icons'       => array(),
+				'banners'     => array(),
+				'tested'      => '',
+				'requires'    => '',
+				'requires_php' => '',
+			);
+		} else {
+			$transient->no_update[ $basename ] = (object) array(
+				'id'          => 'mestari-robots/' . $basename,
+				'slug'        => self::plugin_slug(),
+				'plugin'      => $basename,
+				'new_version' => MESTARI_ROBOTS_VERSION,
+				'url'         => $release['html_url'],
+				'package'     => '',
+				'icons'       => array(),
+				'banners'     => array(),
+			);
+		}
+
+		return $transient;
+	}
+
+	public static function plugin_information( $result, $action, $args ) {
+		if ( 'plugin_information' !== $action ) {
+			return $result;
+		}
+		if ( empty( $args->slug ) || $args->slug !== self::plugin_slug() ) {
+			return $result;
+		}
+
+		$release = self::fetch_release();
+		if ( ! $release ) {
+			return $result;
+		}
+
+		return (object) array(
+			'name'          => 'Mestari Robots',
+			'slug'          => self::plugin_slug(),
+			'version'       => $release['version'],
+			'author'        => '<a href="https://github.com/Tapiokansleri">Tapio Kansleri</a>',
+			'homepage'      => $release['html_url'],
+			'download_link' => $release['zip'],
+			'last_updated'  => $release['published'],
+			'sections'      => array(
+				'description' => 'Minimal robots.txt editor for WordPress. Overrides output from Yoast and other plugins, with a textarea under Settings > Reading.',
+				'changelog'   => wp_kses_post( wpautop( $release['changelog'] ) ),
+			),
+		);
+	}
+
+	public static function fix_source_dir( $source, $remote_source, $upgrader, $hook_extra = array() ) {
+		if ( empty( $hook_extra['plugin'] ) || $hook_extra['plugin'] !== self::plugin_basename() ) {
+			return $source;
+		}
+
+		global $wp_filesystem;
+		if ( ! $wp_filesystem ) {
+			return $source;
+		}
+
+		$desired = trailingslashit( $remote_source ) . self::plugin_slug();
+		$source  = untrailingslashit( $source );
+
+		if ( $source === $desired ) {
+			return trailingslashit( $source );
+		}
+
+		if ( $wp_filesystem->move( $source, $desired, true ) ) {
+			return trailingslashit( $desired );
+		}
+
+		return new WP_Error( 'mestari_robots_rename_failed', 'Could not rename GitHub source directory.' );
+	}
+}
+
+Mestari_Robots_Updater::init();
