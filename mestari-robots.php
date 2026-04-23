@@ -3,7 +3,7 @@
  * Plugin Name: Mestari Robots
  * Plugin URI:  https://github.com/Tapiokansleri/mestari-robots
  * Description: Minimal robots.txt editor. The field lives under Settings > Reading and overrides any other robots.txt output (Yoast, etc.).
- * Version:     1.0.0
+ * Version:     1.1.0
  * Author:      Mestari
  * Update URI:  https://github.com/Tapiokansleri/mestari-robots
  */
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'MESTARI_ROBOTS_FILE', __FILE__ );
-define( 'MESTARI_ROBOTS_VERSION', '1.0.0' );
+define( 'MESTARI_ROBOTS_VERSION', '1.1.0' );
 define( 'MESTARI_ROBOTS_REPO', 'Tapiokansleri/mestari-robots' );
 
 class Mestari_Robots {
@@ -63,6 +63,17 @@ class Mestari_Robots {
 	public static function init() {
 		add_action( 'admin_init', array( __CLASS__, 'register' ) );
 		add_filter( 'robots_txt', array( __CLASS__, 'filter_output' ), PHP_INT_MAX, 2 );
+		add_filter( 'plugin_action_links_' . plugin_basename( MESTARI_ROBOTS_FILE ), array( __CLASS__, 'action_links' ) );
+	}
+
+	public static function action_links( $links ) {
+		$settings = sprintf(
+			'<a href="%s">%s</a>',
+			esc_url( admin_url( 'options-reading.php#' . self::OPTION ) ),
+			esc_html__( 'Settings', 'mestari-robots' )
+		);
+		array_unshift( $links, $settings );
+		return $links;
 	}
 
 	public static function register() {
