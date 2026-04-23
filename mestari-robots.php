@@ -3,7 +3,7 @@
  * Plugin Name: Mestari Robots
  * Plugin URI:  https://github.com/Tapiokansleri/mestari-robots
  * Description: Minimal robots.txt editor. The field lives under Settings > Reading and overrides any other robots.txt output (Yoast, etc.).
- * Version:     1.1.0
+ * Version:     1.1.1
  * Author:      Mestari
  * Update URI:  https://github.com/Tapiokansleri/mestari-robots
  */
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'MESTARI_ROBOTS_FILE', __FILE__ );
-define( 'MESTARI_ROBOTS_VERSION', '1.1.0' );
+define( 'MESTARI_ROBOTS_VERSION', '1.1.1' );
 define( 'MESTARI_ROBOTS_REPO', 'Tapiokansleri/mestari-robots' );
 
 class Mestari_Robots {
@@ -72,7 +72,17 @@ class Mestari_Robots {
 			esc_url( admin_url( 'options-reading.php#' . self::OPTION ) ),
 			esc_html__( 'Settings', 'mestari-robots' )
 		);
-		array_unshift( $links, $settings );
+		$check = sprintf(
+			'<a href="%s">%s</a>',
+			esc_url(
+				wp_nonce_url(
+					admin_url( 'admin-post.php?action=mestari_robots_flush' ),
+					'mestari_robots_flush'
+				)
+			),
+			esc_html__( 'Check for updates', 'mestari-robots' )
+		);
+		array_unshift( $links, $settings, $check );
 		return $links;
 	}
 
@@ -140,6 +150,26 @@ class Mestari_Robots_Updater {
 		add_filter( 'pre_set_site_transient_update_plugins', array( __CLASS__, 'inject_update' ) );
 		add_filter( 'plugins_api', array( __CLASS__, 'plugin_information' ), 10, 3 );
 		add_filter( 'upgrader_source_selection', array( __CLASS__, 'fix_source_dir' ), 10, 4 );
+		add_action( 'load-update-core.php', array( __CLASS__, 'flush_on_force_check' ) );
+		add_action( 'load-plugins.php', array( __CLASS__, 'flush_on_force_check' ) );
+		add_action( 'admin_post_mestari_robots_flush', array( __CLASS__, 'handle_manual_flush' ) );
+	}
+
+	public static function flush_on_force_check() {
+		if ( ! empty( $_GET['force-check'] ) ) {
+			delete_site_transient( self::CACHE_KEY );
+		}
+	}
+
+	public static function handle_manual_flush() {
+		if ( ! current_user_can( 'update_plugins' ) ) {
+			wp_die( esc_html__( 'Insufficient permissions.', 'mestari-robots' ) );
+		}
+		check_admin_referer( 'mestari_robots_flush' );
+		delete_site_transient( self::CACHE_KEY );
+		delete_site_transient( 'update_plugins' );
+		wp_safe_redirect( admin_url( 'update-core.php?force-check=1' ) );
+		exit;
 	}
 
 	private static function plugin_basename() {
