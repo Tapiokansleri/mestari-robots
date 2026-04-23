@@ -139,16 +139,9 @@ class Mestari_Robots_Updater {
 		return dirname( self::plugin_basename() );
 	}
 
-	private static function fetch_release( $force = false ) {
-		if ( ! $force ) {
-			$cached = get_site_transient( self::CACHE_KEY );
-			if ( is_array( $cached ) ) {
-				return empty( $cached['error'] ) ? $cached : false;
-			}
-		}
-
-		$response = wp_remote_get(
-			'https://api.github.com/repos/' . MESTARI_ROBOTS_REPO . '/releases/latest',
+	private static function gh_get( $path ) {
+		return wp_remote_get(
+			'https://api.github.com/repos/' . MESTARI_ROBOTS_REPO . $path,
 			array(
 				'timeout' => 10,
 				'headers' => array(
@@ -157,41 +150,65 @@ class Mestari_Robots_Updater {
 				),
 			)
 		);
+	}
 
-		if ( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) ) {
-			set_site_transient( self::CACHE_KEY, array( 'error' => true ), HOUR_IN_SECONDS );
-			return false;
-		}
-
-		$data = json_decode( wp_remote_retrieve_body( $response ), true );
-		if ( ! is_array( $data ) || empty( $data['tag_name'] ) ) {
-			set_site_transient( self::CACHE_KEY, array( 'error' => true ), HOUR_IN_SECONDS );
-			return false;
-		}
-
-		$zip = '';
-		if ( ! empty( $data['assets'] ) && is_array( $data['assets'] ) ) {
-			foreach ( $data['assets'] as $asset ) {
-				if ( isset( $asset['browser_download_url'] ) && substr( $asset['browser_download_url'], -4 ) === '.zip' ) {
-					$zip = $asset['browser_download_url'];
-					break;
-				}
+	private static function fetch_release( $force = false ) {
+		if ( ! $force ) {
+			$cached = get_site_transient( self::CACHE_KEY );
+			if ( is_array( $cached ) ) {
+				return empty( $cached['error'] ) ? $cached : false;
 			}
 		}
-		if ( ! $zip ) {
-			$zip = ! empty( $data['zipball_url'] ) ? $data['zipball_url'] : '';
+
+		// 1. Try published releases.
+		$response = self::gh_get( '/releases/latest' );
+		if ( ! is_wp_error( $response ) && 200 === wp_remote_retrieve_response_code( $response ) ) {
+			$data = json_decode( wp_remote_retrieve_body( $response ), true );
+			if ( is_array( $data ) && ! empty( $data['tag_name'] ) ) {
+				$zip = '';
+				if ( ! empty( $data['assets'] ) && is_array( $data['assets'] ) ) {
+					foreach ( $data['assets'] as $asset ) {
+						if ( isset( $asset['browser_download_url'] ) && substr( $asset['browser_download_url'], -4 ) === '.zip' ) {
+							$zip = $asset['browser_download_url'];
+							break;
+						}
+					}
+				}
+				if ( ! $zip ) {
+					$zip = ! empty( $data['zipball_url'] ) ? $data['zipball_url'] : '';
+				}
+				$release = array(
+					'version'   => ltrim( $data['tag_name'], 'vV' ),
+					'zip'       => $zip,
+					'changelog' => isset( $data['body'] ) ? (string) $data['body'] : '',
+					'published' => isset( $data['published_at'] ) ? $data['published_at'] : '',
+					'html_url'  => isset( $data['html_url'] ) ? $data['html_url'] : ( 'https://github.com/' . MESTARI_ROBOTS_REPO ),
+				);
+				set_site_transient( self::CACHE_KEY, $release, self::CACHE_TTL );
+				return $release;
+			}
 		}
 
-		$release = array(
-			'version'   => ltrim( $data['tag_name'], 'vV' ),
-			'zip'       => $zip,
-			'changelog' => isset( $data['body'] ) ? (string) $data['body'] : '',
-			'published' => isset( $data['published_at'] ) ? $data['published_at'] : '',
-			'html_url'  => isset( $data['html_url'] ) ? $data['html_url'] : ( 'https://github.com/' . MESTARI_ROBOTS_REPO ),
-		);
+		// 2. Fall back to tags (works for plain `git tag && git push --tags`).
+		$response = self::gh_get( '/tags' );
+		if ( ! is_wp_error( $response ) && 200 === wp_remote_retrieve_response_code( $response ) ) {
+			$tags = json_decode( wp_remote_retrieve_body( $response ), true );
+			if ( is_array( $tags ) && ! empty( $tags[0]['name'] ) ) {
+				$tag     = $tags[0]['name'];
+				$release = array(
+					'version'   => ltrim( $tag, 'vV' ),
+					'zip'       => 'https://github.com/' . MESTARI_ROBOTS_REPO . '/archive/refs/tags/' . rawurlencode( $tag ) . '.zip',
+					'changelog' => '',
+					'published' => '',
+					'html_url'  => 'https://github.com/' . MESTARI_ROBOTS_REPO . '/releases/tag/' . rawurlencode( $tag ),
+				);
+				set_site_transient( self::CACHE_KEY, $release, self::CACHE_TTL );
+				return $release;
+			}
+		}
 
-		set_site_transient( self::CACHE_KEY, $release, self::CACHE_TTL );
-		return $release;
+		set_site_transient( self::CACHE_KEY, array( 'error' => true ), HOUR_IN_SECONDS );
+		return false;
 	}
 
 	public static function inject_update( $transient ) {
