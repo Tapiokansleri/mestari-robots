@@ -2,8 +2,8 @@
 /**
  * Plugin Name: Mestari Robots
  * Plugin URI:  https://github.com/Tapiokansleri/mestari-robots
- * Description: Minimal robots.txt editor. The field lives under Settings > Reading and overrides any other robots.txt output (Yoast, etc.).
- * Version:     1.1.1
+ * Description: Minimal robots.txt and llms.txt editor. Fields live under Settings > Reading; overrides other plugins' robots.txt output (Yoast, etc.).
+ * Version:     1.2.0
  * Author:      Mestari
  * Update URI:  https://github.com/Tapiokansleri/mestari-robots
  */
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'MESTARI_ROBOTS_FILE', __FILE__ );
-define( 'MESTARI_ROBOTS_VERSION', '1.1.1' );
+define( 'MESTARI_ROBOTS_VERSION', '1.2.0' );
 define( 'MESTARI_ROBOTS_REPO', 'Tapiokansleri/mestari-robots' );
 
 class Mestari_Robots {
@@ -140,6 +140,102 @@ class Mestari_Robots {
 }
 
 Mestari_Robots::init();
+
+class Mestari_LLMs {
+
+	const OPTION = 'mestari_llms_txt';
+
+	public static function default_content() {
+		$name = get_bloginfo( 'name' );
+		$desc = get_bloginfo( 'description' );
+		$home = home_url( '/' );
+
+		$out = '# ' . $name . "\n\n";
+		if ( $desc ) {
+			$out .= '> ' . $desc . "\n\n";
+		}
+		$out .= "## Links\n";
+		$out .= '- [' . __( 'Home', 'mestari-robots' ) . '](' . $home . ")\n";
+		return $out;
+	}
+
+	public static function init() {
+		add_action( 'admin_init', array( __CLASS__, 'register' ) );
+		add_action( 'init', array( __CLASS__, 'maybe_serve' ), 0 );
+	}
+
+	public static function register() {
+		register_setting(
+			'reading',
+			self::OPTION,
+			array(
+				'type'              => 'string',
+				'sanitize_callback' => array( __CLASS__, 'sanitize' ),
+				'default'           => '',
+				'show_in_rest'      => false,
+			)
+		);
+
+		add_settings_field(
+			self::OPTION,
+			__( 'llms.txt', 'mestari-robots' ),
+			array( __CLASS__, 'render_field' ),
+			'reading'
+		);
+	}
+
+	public static function sanitize( $input ) {
+		$input = (string) $input;
+		$input = str_replace( array( "\r\n", "\r" ), "\n", $input );
+		return $input;
+	}
+
+	public static function render_field() {
+		$value = get_option( self::OPTION, '' );
+		if ( $value === '' ) {
+			$value = self::default_content();
+		}
+		printf(
+			'<textarea name="%1$s" id="%1$s" rows="16" cols="60" class="large-text code" style="font-family:monospace;">%2$s</textarea>',
+			esc_attr( self::OPTION ),
+			esc_textarea( $value )
+		);
+		echo '<p class="description">'
+			. esc_html__( 'Served at /llms.txt (markdown). Helps LLMs understand your site. Leave empty to use the default generated from site title and tagline.', 'mestari-robots' )
+			. '</p>';
+	}
+
+	public static function maybe_serve() {
+		$request = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '';
+		$path    = wp_parse_url( $request, PHP_URL_PATH );
+		if ( ! is_string( $path ) ) {
+			return;
+		}
+		if ( 'llms.txt' !== trim( $path, '/' ) ) {
+			return;
+		}
+
+		nocache_headers();
+
+		if ( ! (int) get_option( 'blog_public', 1 ) ) {
+			status_header( 404 );
+			exit;
+		}
+
+		$value = get_option( self::OPTION, '' );
+		if ( '' === $value ) {
+			$value = self::default_content();
+		}
+
+		status_header( 200 );
+		header( 'Content-Type: text/markdown; charset=' . get_bloginfo( 'charset' ) );
+		header( 'X-Robots-Tag: noindex' );
+		echo $value; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- served as text/markdown.
+		exit;
+	}
+}
+
+Mestari_LLMs::init();
 
 class Mestari_Robots_Updater {
 

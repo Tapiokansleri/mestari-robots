@@ -1,13 +1,15 @@
 # Mestari Robots
 
-Minimal WordPress plugin for editing `robots.txt`. One textarea under **Settings → Reading** that overrides any other `robots.txt` output (Yoast, Rank Math, etc.).
+Minimal WordPress plugin for editing `robots.txt` and `llms.txt`. Two textareas under **Settings → Reading**; the robots.txt output overrides anything Yoast / Rank Math / etc. produce.
 
 ## Features
 
-- Single textarea under **Settings → Reading** — no separate settings page.
+- Textareas for both `robots.txt` and `llms.txt` under **Settings → Reading** — no separate settings page.
 - Overrides any other `robots.txt` output (hooks `robots_txt` at `PHP_INT_MAX`).
-- Default content auto-detects the active SEO plugin's sitemap URL (Yoast, Rank Math, SEOPress, All in One SEO, Google XML Sitemaps, or WP core).
-- Respects **Settings → Reading → Discourage search engines from indexing this site** — serves `Disallow: /` when that's checked.
+- Serves `/llms.txt` as `text/markdown` so LLMs can discover it.
+- Default `robots.txt` auto-detects the active SEO plugin's sitemap URL (Yoast, Rank Math, SEOPress, All in One SEO, Google XML Sitemaps, or WP core).
+- Default `llms.txt` is generated from the site title and tagline.
+- Respects **Settings → Reading → Discourage search engines from indexing this site** — serves `Disallow: /` for robots.txt and 404s `/llms.txt` when that's checked.
 - Self-updates from GitHub releases/tags — updates show up in **Dashboard → Updates** like any WP.org plugin.
 
 ## Installation
