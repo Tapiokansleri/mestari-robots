@@ -1,11 +1,14 @@
 <?php
 /**
- * Plugin Name: Mestari Robots
+ * Plugin Name: Edit Robots.txt
  * Plugin URI:  https://github.com/Tapiokansleri/mestari-robots
  * Description: Minimal robots.txt and llms.txt editor. Fields live under Settings > Reading; overrides other plugins' robots.txt output (Yoast, etc.).
- * Version:     1.2.0
- * Author:      Mestari
+ * Version:     1.3.0
+ * Author:      Tapio Kauranen
+ * Author URI:  https://tapiokauranen.com
  * Update URI:  https://github.com/Tapiokansleri/mestari-robots
+ * License:     GPL-2.0-or-later
+ * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -13,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'MESTARI_ROBOTS_FILE', __FILE__ );
-define( 'MESTARI_ROBOTS_VERSION', '1.2.0' );
+define( 'MESTARI_ROBOTS_VERSION', '1.3.0' );
 define( 'MESTARI_ROBOTS_REPO', 'Tapiokansleri/mestari-robots' );
 
 class Mestari_Robots {
@@ -206,7 +209,7 @@ class Mestari_LLMs {
 	}
 
 	public static function maybe_serve() {
-		$request = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '';
+		$request = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
 		$path    = wp_parse_url( $request, PHP_URL_PATH );
 		if ( ! is_string( $path ) ) {
 			return;
@@ -252,7 +255,7 @@ class Mestari_Robots_Updater {
 	}
 
 	public static function flush_on_force_check() {
-		if ( ! empty( $_GET['force-check'] ) ) {
+		if ( ! empty( $_GET['force-check'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- WP core's force-check pattern, no data is processed.
 			delete_site_transient( self::CACHE_KEY );
 		}
 	}
@@ -404,10 +407,10 @@ class Mestari_Robots_Updater {
 		}
 
 		return (object) array(
-			'name'          => 'Mestari Robots',
+			'name'          => 'Edit Robots.txt',
 			'slug'          => self::plugin_slug(),
 			'version'       => $release['version'],
-			'author'        => '<a href="https://github.com/Tapiokansleri">Tapio Kansleri</a>',
+			'author'        => '<a href="https://tapiokauranen.com">Tapio Kauranen</a>',
 			'homepage'      => $release['html_url'],
 			'download_link' => $release['zip'],
 			'last_updated'  => $release['published'],

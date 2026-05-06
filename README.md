@@ -1,6 +1,11 @@
-# Mestari Robots
+# Edit Robots.txt
 
 Minimal WordPress plugin for editing `robots.txt` and `llms.txt`. Two textareas under **Settings → Reading**; the robots.txt output overrides anything Yoast / Rank Math / etc. produce.
+
+**Stable tag:** 1.3.0
+**Tested up to:** 6.7
+**License:** GPL-2.0-or-later
+**License URI:** https://www.gnu.org/licenses/gpl-2.0.html
 
 ## Features
 
@@ -48,7 +53,7 @@ Version detection order:
 2. Commit.
 3. Tag and push:
    ```sh
-   git tag v1.1.0
+   git tag v1.3.0
    git push --tags
    ```
 
