@@ -3,7 +3,7 @@
  * Plugin Name: Edit Robots.txt
  * Plugin URI:  https://github.com/Tapiokansleri/mestari-robots
  * Description: Minimal robots.txt and llms.txt editor. Fields live under Settings > Reading; overrides other plugins' robots.txt output (Yoast, etc.).
- * Version:     1.3.0
+ * Version:     1.4.0
  * Author:      Tapio Kauranen
  * Author URI:  https://tapiokauranen.com
  * Update URI:  https://github.com/Tapiokansleri/mestari-robots
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'MESTARI_ROBOTS_FILE', __FILE__ );
-define( 'MESTARI_ROBOTS_VERSION', '1.3.0' );
+define( 'MESTARI_ROBOTS_VERSION', '1.4.0' );
 define( 'MESTARI_ROBOTS_REPO', 'Tapiokansleri/mestari-robots' );
 
 class Mestari_Robots {
@@ -447,3 +447,43 @@ class Mestari_Robots_Updater {
 }
 
 Mestari_Robots_Updater::init();
+
+/**
+ * Fix: Prevent stray output from breaking Yoast XML sitemaps.
+ *
+ * Any whitespace, notices, or inline scripts that appear before Yoast's
+ * <?xml declaration will break the XML parser. We start output buffering
+ * at plugin load time (before themes load) and discard accumulated junk
+ * right before Yoast sends its XML.
+ */
+if ( isset( $_SERVER['REQUEST_URI'] ) ) {
+	$mestari_req_path = wp_parse_url(
+		sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ),
+		PHP_URL_PATH
+	);
+	if (
+		is_string( $mestari_req_path )
+		&& ( preg_match( '/sitemap[0-9]*\.xml$/i', $mestari_req_path )
+			|| preg_match( '/sitemap_index\.xml$/i', $mestari_req_path ) )
+	) {
+		$mestari_ob_level = ob_get_level();
+		ob_start();
+
+		// Discard only our buffer right before Yoast sends headers + XML.
+		add_filter( 'wpseo_sitemap_http_headers', function ( $headers ) use ( $mestari_ob_level ) {
+			while ( ob_get_level() > $mestari_ob_level ) {
+				ob_end_clean();
+			}
+			return $headers;
+		}, 1 );
+
+		// Safety net: if Yoast is not active the filter never fires.
+		// Flush (not clean) our buffer on shutdown so normal output is preserved.
+		add_action( 'shutdown', function () use ( $mestari_ob_level ) {
+			while ( ob_get_level() > $mestari_ob_level ) {
+				ob_end_flush();
+			}
+		}, 0 );
+	}
+	unset( $mestari_req_path );
+}
